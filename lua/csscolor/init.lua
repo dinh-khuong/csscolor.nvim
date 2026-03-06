@@ -2,6 +2,15 @@ local ns_id = vim.api.nvim_create_namespace 'CssColor'
 local Colors = {}
 local CssExtmark = {}
 
+local function get_bufnr(event)
+    local bufnr = event and event.buf or vim.api.nvim_get_current_buf()
+    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
+        return nil
+    end
+
+    return bufnr
+end
+
 local function highlight_color_css(bufnr, start, stop)
     -- local bufnr = vim.api.nvim_get_current_buf()
     local ok, query = pcall(vim.treesitter.query.parse, 'css', '(color_value) @color')
@@ -69,17 +78,36 @@ local function delete_color_css(bufnr)
     CssExtmark[bufnr] = {}
 end
 
-vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
-    pattern = { '*.css' },
-    callback = function (event)
-        local bufnr = event and event.buf or vim.api.nvim_get_current_buf()
-        if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
+local function createCssHighlighter()
+    return vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
+        pattern = { '*.css' },
+        callback = function (event)
+            local bufnr = get_bufnr(event)
+            if not bufnr then
+                return
+            end
+            delete_color_css(bufnr)
+            highlight_color_css(bufnr, 0, -1)
+        end
+    })
+end
+
+local cssHighlighter = createCssHighlighter()
+
+vim.api.nvim_create_user_command("CssColorToggle", function()
+    if cssHighlighter == -1 then
+        cssHighlighter = createCssHighlighter()
+        vim.api.nvim_del_autocmd(cssHighlighter)
+        local bufnr = get_bufnr()
+        if not bufnr then
             return
         end
-        delete_color_css(bufnr)
         highlight_color_css(bufnr, 0, -1)
+    else
+        cssHighlighter = -1
+        for bufnr, _ in pairs(CssExtmark) do
+            delete_color_css(bufnr)
+        end
     end
-})
-
-
+end, {})
 

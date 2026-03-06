@@ -83,7 +83,7 @@ local function highlight_color_css(bufnr, start, stop)
   CssExtmark[bufnr] = {}
   local tree = parser:parse()[1]
   for _id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
-    local hex_color = vim.treesitter.get_node_text(node, bufnr)
+    local hex_color = vim.treesitter.get_node_text(node, bufnr):lower()
     if not hex_color:match("^#%x+") then
       goto continue
     end

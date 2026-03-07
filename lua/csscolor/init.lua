@@ -63,47 +63,55 @@ local function _node_to_hex(node, bufnr)
   return "#" .. table.concat(colors, "", 1, 3)
 end
 
-
 --- Converts an HSL color value to RGB.
 --- @param h number The hue (between 0 and 1)
 --- @param s number The saturation (between 0 and 1)
 --- @param l number The lightness (between 0 and 1)
 --- @return number, number, number The RGB representation (between 0 and 255)
 local function hsl_to_rgb(h, s, l)
-    local r, g, b
+  local r, g, b
 
-    if s == 0 then
-        -- If there is no saturation, the color is a shade of gray
-        r, g, b = l, l, l
-    else
-        -- Helper function to convert a single hue channel to RGB
-        local function hueToRgb(p, q, t)
-            if t < 0 then t = t + 1 end
-            if t > 1 then t = t - 1 end
-            if t < 1/6 then return p + (q - p) * 6 * t end
-            if t < 1/2 then return q end
-            if t < 2/3 then return p + (q - p) * (2/3 - t) * 6 end
-            return p
-        end
-
-        local q
-        if l < 0.5 then
-            q = l * (1 + s)
-        else
-            q = l + s - l * s
-        end
-        local p = 2 * l - q
-
-        -- Calculate the three channels
-        r = hueToRgb(p, q, h + 1/3)
-        g = hueToRgb(p, q, h)
-        b = hueToRgb(p, q, h - 1/3)
+  if s == 0 then
+    -- If there is no saturation, the color is a shade of gray
+    r, g, b = l, l, l
+  else
+    -- Helper function to convert a single hue channel to RGB
+    local function hueToRgb(p, q, t)
+      if t < 0 then
+        t = t + 1
+      end
+      if t > 1 then
+        t = t - 1
+      end
+      if t < 1 / 6 then
+        return p + (q - p) * 6 * t
+      end
+      if t < 1 / 2 then
+        return q
+      end
+      if t < 2 / 3 then
+        return p + (q - p) * (2 / 3 - t) * 6
+      end
+      return p
     end
 
-    -- Scale up to 0-255 and round to the nearest integer
-    return math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)
-end
+    local q
+    if l < 0.5 then
+      q = l * (1 + s)
+    else
+      q = l + s - l * s
+    end
+    local p = 2 * l - q
 
+    -- Calculate the three channels
+    r = hueToRgb(p, q, h + 1 / 3)
+    g = hueToRgb(p, q, h)
+    b = hueToRgb(p, q, h - 1 / 3)
+  end
+
+  -- Scale up to 0-255 and round to the nearest integer
+  return math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)
+end
 
 local function _highlight_node(node, hex_color, bufnr)
   if not Colors[hex_color] then
@@ -137,62 +145,23 @@ end
 ---@param start number
 ---@param stop number
 local function highlight_color_css(bufnr, start, stop)
-  local parser = vim.treesitter.get_parser(bufnr)
+  local parser = vim.treesitter.get_parser(bufnr, "css")
   if not parser then
     print("No Tree-sitter parser available for this filetype.")
     return
   end
 
-  local query = vim.treesitter.query.parse("css", "(color_value) @color")
-  if not query then
-    return
-  end
-
-  CssExtmark[bufnr] = {}
-  local tree = parser:parse()[1]
-  for _id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
-    local hex_color = vim.treesitter.get_node_text(node, bufnr):lower()
-    if not hex_color:match("^#%x+") then
-      goto continue
-    end
-    _highlight_node(node, hex_color, bufnr)
-
-    ::continue::
-  end
-
-  local query_rgb = vim.treesitter.query.parse(
+  local query = vim.treesitter.query.parse(
     "css",
     [[
+    (color_value) @color
+
     (call_expression
       (function_name) @rgb
       (#match? @rgb "rgb")
       (arguments)
       ) @expr_rgb
-    ]]
-  )
 
-  for id, node, _metadata, _match in query_rgb:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
-    local name = query_rgb.captures[id] -- name of the capture in the query
-    if name ~= "expr_rgb" then
-      goto continue
-    end
-    local args_node = node:child(1)
-    if not args_node then
-      goto continue
-    end
-
-    local hex_color = _node_to_hex(args_node, bufnr)
-    if not hex_color then
-      goto continue
-    end
-
-    _highlight_node(node, hex_color, bufnr)
-    ::continue::
-  end
-
-  local query_hsl = vim.treesitter.query.parse(
-    "css",
-    [[
     (call_expression
       (function_name) @hsl
       (#match? @hsl "hsl")
@@ -201,33 +170,51 @@ local function highlight_color_css(bufnr, start, stop)
     ]]
   )
 
-  for id, node, _metadata, _match in query_hsl:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
-    local name = query_hsl.captures[id] -- name of the capture in the query
-    if name ~= "expr_hsl" then
-      goto continue
-    end
-    local args_node = node:child(1)
-    if not args_node then
-      goto continue
+  CssExtmark[bufnr] = {}
+  local tree = parser:parse()[1]
+  for id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
+    if query.captures[id] == "color" then
+      local hex_color = vim.treesitter.get_node_text(node, bufnr):lower()
+      if not hex_color:match("^#%x+") then
+        goto continue
+      end
+      _highlight_node(node, hex_color, bufnr)
+    elseif query.captures[id] == "expr_rgb" then
+      local args_node = node:child(1)
+      if not args_node then
+        goto continue
+      end
+
+      local hex_color = _node_to_hex(args_node, bufnr)
+      if not hex_color then
+        goto continue
+      end
+
+      _highlight_node(node, hex_color, bufnr)
+    elseif query.captures[id] == "expr_hsl" then
+      local args_node = node:child(1)
+      if not args_node then
+        goto continue
+      end
+
+      local hsl_color = _get_node_args(args_node, bufnr, 3)
+      if #hsl_color < 3 then
+        goto continue
+      end
+
+      local red, green, blue = hsl_to_rgb(hsl_color[1] / 360, hsl_color[2], hsl_color[3])
+
+      _highlight_node(
+        node,
+        "#" .. string.format("%02x", red) .. string.format("%02x", green) .. string.format("%02x", blue),
+        bufnr
+      )
     end
 
-    local hsl_color = _get_node_args(args_node, bufnr, 3)
-    if #hsl_color < 3 then
-      goto continue
-    end
-
-    local red, green, blue = hsl_to_rgb(hsl_color[1] / 360, hsl_color[2], hsl_color[3])
-
-    _highlight_node(node, '#' ..
-      string.format("%02x", red) ..
-      string.format("%02x", green) ..
-      string.format("%02x", blue)
-      , bufnr)
     ::continue::
   end
 end
 
----comment
 ---@param bufnr number
 local function delete_extmark_css(bufnr)
   local extmarks = CssExtmark[bufnr]
@@ -246,7 +233,6 @@ end
 -- -- Cyan: Hue 180 (0.5), Saturation 100% (1.0), Lightness 50% (0.5)
 -- local red, green, blue = hslToRgb(0.5, 1.0, 0.5)
 -- print(red, green, blue) -- Output: 0 255 255
-
 
 local function createCssHighlighter()
   return vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
@@ -280,5 +266,3 @@ vim.api.nvim_create_user_command("CssColorToggle", function()
     end
   end
 end, {})
-
-

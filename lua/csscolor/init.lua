@@ -37,6 +37,22 @@ local function _get_node_args(node, bufnr, n_args)
   return args
 end
 
+---@param hex_color string
+---@return string|nil
+local function _format_hex_color(hex_color)
+  if #hex_color == 9 then
+    return hex_color:sub(1, 7)
+  elseif #hex_color == 7 then
+    return hex_color
+  elseif #hex_color >= 4 then
+    local red = hex_color:sub(2, 2)
+    local green = hex_color:sub(3, 3)
+    local blue = hex_color:sub(4, 4)
+    return '#' .. red .. red .. green .. green .. blue .. blue
+  end
+  return nil
+end
+
 ---@param node TSNode
 ---@param bufnr number
 ---@return string|nil
@@ -178,6 +194,11 @@ local function highlight_color_css(bufnr, start, stop)
       if not hex_color:match("^#%x+") then
         goto continue
       end
+     hex_color = _format_hex_color(hex_color)
+      if not hex_color then
+        goto continue
+      end
+
       _highlight_node(node, hex_color, bufnr)
     elseif query.captures[id] == "expr_rgb" then
       local args_node = node:child(1)

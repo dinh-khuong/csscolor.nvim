@@ -39,7 +39,7 @@ end
 
 ---@param hex_color string
 ---@return string|nil
-local function _format_hex_color(hex_color)
+local function _format_shorthand_hex_color(hex_color)
   if #hex_color == 9 then
     return hex_color:sub(1, 7)
   elseif #hex_color == 7 then
@@ -51,6 +51,14 @@ local function _format_hex_color(hex_color)
     return '#' .. red .. red .. green .. green .. blue .. blue
   end
   return nil
+end
+
+---@param red number   (0, 255)
+---@param green number (0, 255)
+---@param blue number  (0, 255)
+---@return string
+local function _color_hex(red, green, blue)
+  return '#' .. string.format("%02x", red) .. string.format("%02x", green) .. string.format("%02x", blue)
 end
 
 ---@param node TSNode
@@ -76,7 +84,7 @@ local function _node_to_hex(node, bufnr)
     return nil
   end
 
-  return "#" .. table.concat(colors, "", 1, 3)
+  return _color_hex(colors[1], colors[2], colors[3])
 end
 
 --- Converts an HSL color value to RGB.
@@ -127,6 +135,51 @@ local function hsl_to_rgb(h, s, l)
 
   -- Scale up to 0-255 and round to the nearest integer
   return math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)
+end
+
+-- Converts HSV to RGB.
+-- h: Hue [0, 360)
+-- s: Saturation [0, 1]
+-- v: Value [0, 1]
+-- Returns: r, g, b in the range [0, 255]
+local function hsv_to_rgb(h, s, v)
+  -- Step 1: Calculate Chroma
+  local c = v * s
+
+  -- Step 2: Calculate the intermediate value X
+  -- We use h / 60 as a shortcut for the sector
+  local h_prime = h / 60.0
+  local x = c * (1 - math.abs(h_prime % 2 - 1))
+
+  -- Step 3: Determine base RGB values based on the Hue sector
+  local r_prime, g_prime, b_prime
+
+  if h_prime >= 0 and h_prime < 1 then
+    r_prime, g_prime, b_prime = c, x, 0
+  elseif h_prime >= 1 and h_prime < 2 then
+    r_prime, g_prime, b_prime = x, c, 0
+  elseif h_prime >= 2 and h_prime < 3 then
+    r_prime, g_prime, b_prime = 0, c, x
+  elseif h_prime >= 3 and h_prime < 4 then
+    r_prime, g_prime, b_prime = 0, x, c
+  elseif h_prime >= 4 and h_prime < 5 then
+    r_prime, g_prime, b_prime = x, 0, c
+  elseif h_prime >= 5 and h_prime <= 6 then
+    r_prime, g_prime, b_prime = c, 0, x
+  else
+    r_prime, g_prime, b_prime = 0, 0, 0 -- Fallback for invalid hues
+  end
+
+  -- Step 4: Add the value match (m)
+  local m = v - c
+
+  -- Step 5: Scale to [0, 255] and round to nearest integer
+  -- math.floor(val + 0.5) is the standard Lua way to round
+  local r = math.floor((r_prime + m) * 255 + 0.5)
+  local g = math.floor((g_prime + m) * 255 + 0.5)
+  local b = math.floor((b_prime + m) * 255 + 0.5)
+
+  return r, g, b
 end
 
 local function _highlight_node(node, hex_color, bufnr)
@@ -183,6 +236,12 @@ local function highlight_color_css(bufnr, start, stop)
       (#match? @hsl "hsl")
       (arguments)
       ) @expr_hsl
+
+    (call_expression
+      (function_name) @hsv
+      (#match? @hsv "hsv")
+      (arguments)
+      ) @expr_hsv
     ]]
   )
 
@@ -194,7 +253,7 @@ local function highlight_color_css(bufnr, start, stop)
       if not hex_color:match("^#%x+") then
         goto continue
       end
-     hex_color = _format_hex_color(hex_color)
+      hex_color = _format_shorthand_hex_color(hex_color)
       if not hex_color then
         goto continue
       end
@@ -227,7 +286,25 @@ local function highlight_color_css(bufnr, start, stop)
 
       _highlight_node(
         node,
-        "#" .. string.format("%02x", red) .. string.format("%02x", green) .. string.format("%02x", blue),
+        _color_hex(red, green, blue),
+        bufnr
+      )
+    elseif query.captures[id] == "expr_hsv" then
+      local args_node = node:child(1)
+      if not args_node then
+        goto continue
+      end
+
+      local hsv_color = _get_node_args(args_node, bufnr, 3)
+      if #hsv_color < 3 then
+        goto continue
+      end
+
+      local red, green, blue = hsv_to_rgb(hsv_color[1], hsv_color[2], hsv_color[3])
+
+      _highlight_node(
+        node,
+        _color_hex(red, green, blue),
         bufnr
       )
     end

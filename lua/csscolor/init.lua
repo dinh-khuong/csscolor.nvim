@@ -2,6 +2,8 @@ local ns_id = vim.api.nvim_create_namespace("CssColor")
 local Colors = {}
 local CssExtmark = {}
 
+---@param event vim.api.keyset.create_autocmd.callback_args
+---@return number|nil
 local function get_bufnr(event)
   local bufnr = event and event.buf or vim.api.nvim_get_current_buf()
   if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
@@ -211,15 +213,8 @@ local function _highlight_node(node, hex_color, bufnr)
 end
 
 ---@param bufnr number
----@param start number
----@param stop number
-local function highlight_color_css(bufnr, start, stop)
-  local parser = vim.treesitter.get_parser(bufnr, "css")
-  if not parser then
-    print("No Tree-sitter parser available for this filetype.")
-    return
-  end
-
+---@param tree TSTree
+local function highlight_css_tree(bufnr, tree)
   local query = vim.treesitter.query.parse(
     "css",
     [[
@@ -245,9 +240,7 @@ local function highlight_color_css(bufnr, start, stop)
     ]]
   )
 
-  CssExtmark[bufnr] = {}
-  local tree = parser:parse()[1]
-  for id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr, start, stop, { all = true }) do
+  for id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr) do
     if query.captures[id] == "color" then
       local hex_color = vim.treesitter.get_node_text(node, bufnr):lower()
       if not hex_color:match("^#%x+") then
@@ -314,6 +307,25 @@ local function highlight_color_css(bufnr, start, stop)
 end
 
 ---@param bufnr number
+local function highlight_trees(bufnr)
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return
+  end
+
+  parser:parse()
+
+  CssExtmark[bufnr] = {}
+  parser:for_each_tree(function(tstree, language_tree)
+    if language_tree:lang() ~= "css" then
+      return
+    end
+
+    highlight_css_tree(bufnr, tstree)
+  end)
+end
+
+---@param bufnr number
 local function delete_extmark_css(bufnr)
   local extmarks = CssExtmark[bufnr]
   if not extmarks then
@@ -327,21 +339,16 @@ local function delete_extmark_css(bufnr)
   CssExtmark[bufnr] = {}
 end
 
--- -- Example usage:
--- -- Cyan: Hue 180 (0.5), Saturation 100% (1.0), Lightness 50% (0.5)
--- local red, green, blue = hslToRgb(0.5, 1.0, 0.5)
--- print(red, green, blue) -- Output: 0 255 255
-
 local function createCssHighlighter()
   return vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
-    pattern = { "*.css" },
+    pattern = { "*.css", "*.html", "*.js*", "*.ts*" },
     callback = function(event)
       local bufnr = get_bufnr(event)
       if not bufnr then
         return
       end
       delete_extmark_css(bufnr)
-      highlight_color_css(bufnr, 0, -1)
+      highlight_trees(bufnr)
     end,
   })
 end
@@ -351,13 +358,13 @@ local cssHighlighter = createCssHighlighter()
 vim.api.nvim_create_user_command("CssColorToggle", function()
   if cssHighlighter == -1 then
     cssHighlighter = createCssHighlighter()
-    vim.api.nvim_del_autocmd(cssHighlighter)
     local bufnr = get_bufnr()
     if not bufnr then
       return
     end
-    highlight_color_css(bufnr, 0, -1)
+    highlight_trees(bufnr)
   else
+    vim.api.nvim_del_autocmd(cssHighlighter)
     cssHighlighter = -1
     for bufnr, _ in pairs(CssExtmark) do
       delete_extmark_css(bufnr)

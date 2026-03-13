@@ -2,7 +2,7 @@ local ns_id = vim.api.nvim_create_namespace("CssColor")
 local Colors = {}
 local CssExtmark = {}
 
----@param event vim.api.keyset.create_autocmd.callback_args
+---@param event vim.api.keyset.create_autocmd.callback_args|nil
 ---@return number|nil
 local function get_bufnr(event)
   local bufnr = event and event.buf or vim.api.nvim_get_current_buf()
@@ -46,7 +46,7 @@ local function _format_shorthand_hex_color(hex_color)
     return hex_color:sub(1, 7)
   elseif #hex_color == 7 then
     return hex_color
-  elseif #hex_color >= 4 then
+  elseif #hex_color == 4 or #hex_color == 5 then
     local red = hex_color:sub(2, 2)
     local green = hex_color:sub(3, 3)
     local blue = hex_color:sub(4, 4)
@@ -208,6 +208,7 @@ local function _highlight_node(node, hex_color, bufnr)
       hl_eol = false,
       virt_text = { { " ", Colors[hex_color] } },
       virt_text_pos = "inline",
+      -- priority = 200,
     })
   )
 end
@@ -312,9 +313,9 @@ local function highlight_trees(bufnr)
   if not ok or not parser then
     return
   end
+  local max_row = vim.api.nvim_buf_line_count(bufnr)
 
-  parser:parse()
-
+  parser:parse({ 0, max_row })
   CssExtmark[bufnr] = {}
   parser:for_each_tree(function(tstree, language_tree)
     if language_tree:lang() ~= "css" then
@@ -341,12 +342,13 @@ end
 
 local function createCssHighlighter()
   return vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
-    pattern = { "*.css", "*.html", "*.js*", "*.ts*" },
+    pattern = { "*.css", "*.html", "*.js", "*.ts" },
     callback = function(event)
       local bufnr = get_bufnr(event)
       if not bufnr then
         return
       end
+
       delete_extmark_css(bufnr)
       highlight_trees(bufnr)
     end,

@@ -215,6 +215,25 @@ end
 
 ---@param bufnr number
 ---@param tree TSTree
+local function highlight_js_tree(bufnr, tree)
+  local query = vim.treesitter.query.parse("javascript", [[
+(string (string_fragment) @color
+  (#match? @color "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+  )
+]])
+  for id, node, _metadata, _match in query:iter_captures(tree:root(), bufnr) do
+    if query.captures[id] == "color" then
+      local hex_color = vim.treesitter.get_node_text(node, bufnr):lower()
+      hex_color = _format_shorthand_hex_color(hex_color)
+      if hex_color then
+        _highlight_node(node, hex_color, bufnr)
+      end
+    end
+  end
+end
+
+---@param bufnr number
+---@param tree TSTree
 local function highlight_css_tree(bufnr, tree)
   local query = vim.treesitter.query.parse(
     "css",
@@ -318,11 +337,11 @@ local function highlight_trees(bufnr)
   parser:parse({ 0, max_row })
   CssExtmark[bufnr] = {}
   parser:for_each_tree(function(tstree, language_tree)
-    if language_tree:lang() ~= "css" then
-      return
+    if language_tree:lang() == "css" then
+      highlight_css_tree(bufnr, tstree)
+    elseif language_tree:lang() == "javascript" then
+      highlight_js_tree(bufnr, tstree)
     end
-
-    highlight_css_tree(bufnr, tstree)
   end)
 end
 

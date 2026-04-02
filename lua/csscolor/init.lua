@@ -86,7 +86,7 @@ local function _node_to_hex(node, bufnr)
     return nil
   end
 
-  return _color_hex(colors[1], colors[2], colors[3])
+  return '#' .. table.concat(vim.list_slice(colors, 1, 3))
 end
 
 --- Converts an HSL color value to RGB.
